@@ -72,7 +72,7 @@ services:
     image: ghcr.io/wg-easy/wg-easy
 
     environment:
-      - PASSWORD_HASH=$HASH
+      - PASSWORD_HASH="$HASH"
       - WG_HOST=192.168.0.181
 
     volumes:
