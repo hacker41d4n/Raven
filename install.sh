@@ -85,7 +85,7 @@ services:
       - PUID=1000
       - PGID=1000
       - TZ=Africa/Johannesburg
-      - SERVERURL=yourdomain.com
+      - SERVERURL=192.168.0.181
       - SERVERPORT=51820
       - PEERS=1
       - PEERDNS=1.1.1.1
@@ -104,7 +104,7 @@ services:
     container_name: pihole
     environment:
       TZ: Africa/Johannesburg
-      WEBPASSWORD: "yourpassword"
+      WEBPASSWORD: "1298144"
       DNS1: 1.1.1.1
       DNS2: 1.0.0.1
     volumes:
@@ -124,7 +124,7 @@ services:
     environment:
       - N8N_BASIC_AUTH_ACTIVE=true
       - N8N_BASIC_AUTH_USER=admin
-      - N8N_BASIC_AUTH_PASSWORD=yourpassword
+      - N8N_BASIC_AUTH_PASSWORD=1298144
     volumes:
       - ./n8n:/home/node/.n8n
     restart: unless-stopped
