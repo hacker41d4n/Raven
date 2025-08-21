@@ -54,6 +54,47 @@ cd /opt/stacks/wireguard
 
 docker run --rm -it ghcr.io/wg-easy/wg-easy wgpw '1298144'
 
-cp /root/Raven/docker_compose.yaml /opt/stacks/wireguard
 
-docker compose compose up -d
+cat > docker-compose.yml <<EOF
+
+sudo usermod -aG docker $USER
+
+
+sudo reboot
+
+sudo mkdir -p /opt/stacks/wireguard
+cd /opt/stacks/wireguard
+
+docker run --rm -it ghcr.io/wg-easy/wg-easy wgpw '1298144'
+
+
+
+cat > docker-compose.yaml <<EOF
+
+version: "3.8"
+
+services:
+  wg-easy:
+    container_name: wg-easy
+    image: ghcr.io/wg-easy/wg-easy
+
+    environment:
+      - PASSWORD_HASH=$$2b$$12$$coPqCsPtcFO.Ab99xylBNOW4.Iu7OOA2/ZIboHN6/oyxca3MWo7fW
+      - WG_HOST=192.168.0.181
+
+    volumes:
+      - ./config:/etc/wireguard
+      - /lib/modules:/lib/modules
+    ports:
+      - "51820:51820/udp"
+      - "51821:51821/tcp"
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.src_valid_mark=1
+EOF
+
+docker compose up -d
