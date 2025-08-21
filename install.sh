@@ -54,4 +54,6 @@ cd /opt/stacks/wireguard
 
 docker run --rm -it ghcr.io/wg-easy/wg-easy wgpw '1298144'
 
+cp /root/Raven/docker_compose.yaml /opt/stacks/wireguard
+
 docker compose compose up -d
