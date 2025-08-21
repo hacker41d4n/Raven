@@ -1,8 +1,8 @@
 #!/bin/bash
-# Raven full setup script
-# Works for Debian-based systems
+# Raven full setup script - Debian-based systems
+# Installs Docker, n8n, and WireGuard (wg-easy)
 
-set -e  # Exit on any error
+set -e
 export DEBIAN_FRONTEND=noninteractive
 
 # -----------------------
@@ -12,13 +12,9 @@ sudo apt update -y
 sudo apt upgrade -y
 
 # -----------------------
-# 2️⃣ Install prerequisites for Docker
+# 2️⃣ Install prerequisites
 # -----------------------
-sudo apt install -y \
-    ca-certificates \
-    curl \
-    gnupg \
-    lsb-release
+sudo apt install -y ca-certificates curl gnupg lsb-release
 
 # -----------------------
 # 3️⃣ Install Docker
@@ -34,17 +30,14 @@ echo \
 sudo apt update
 sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
-# Add current user to Docker group (no need to log out manually in this script)
+# Add current user to Docker group
 sudo usermod -aG docker $USER
 
 # -----------------------
 # 4️⃣ Setup n8n
 # -----------------------
-
-# Create volume
 docker volume create n8n_data
 
-# Run n8n container
 docker run -d \
   --name n8n \
   -p 5678:5678 \
@@ -59,8 +52,6 @@ docker run -d \
 # -----------------------
 # 5️⃣ Setup WireGuard (wg-easy)
 # -----------------------
-
-# Create stack directory
 sudo mkdir -p /opt/stacks/wireguard
 cd /opt/stacks/wireguard || exit
 
@@ -69,24 +60,23 @@ PASSWORD="1298144"
 HASH=$(docker run --rm ghcr.io/wg-easy/wg-easy wgpw "$PASSWORD")
 echo "✅ Generated password hash: $HASH"
 
-# Create docker-compose.yml with correct syntax
-cat <<EOF > docker-compose.yml
-services:
+# Write docker-compose.yml with the correct hash using printf
+printf "services:
   wg-easy:
     container_name: wg-easy
     image: ghcr.io/wg-easy/wg-easy
 
     environment:
-      PASSWORD_HASH: "$HASH"
-      WG_HOST: "192.168.0.181"
+      PASSWORD_HASH: '%s'
+      WG_HOST: '192.168.0.181'
 
     volumes:
       - ./config:/etc/wireguard
       - /lib/modules:/lib/modules
 
     ports:
-      - "51820:51820/udp"
-      - "51821:51821/tcp"
+      - '51820:51820/udp'
+      - '51821:51821/tcp'
 
     restart: unless-stopped
 
@@ -97,11 +87,12 @@ services:
     sysctls:
       net.ipv4.ip_forward: 1
       net.ipv4.conf.all.src_valid_mark: 1
-EOF
+" "$HASH" > docker-compose.yml
 
-# Start WireGuard stack
+# Start WireGuard
+docker compose down || true
 docker compose up -d
 
 echo "🎉 Raven setup complete!"
 echo "n8n URL: http://localhost:5678"
-echo "WireGuard wg-easy URL: http://<WG_HOST>:51821 (login with password you set)"
+echo "WireGuard wg-easy URL: http://192.168.0.181:51821 (login with password you set)"
