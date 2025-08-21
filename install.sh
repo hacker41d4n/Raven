@@ -63,41 +63,43 @@ docker run -d \
 # -----------------------
 # 6️⃣ Setup WireGuard (wg-easy)
 # -----------------------
-sudo mkdir -p /opt/stacks/wireguard
-cd /opt/stacks/wireguard || exit
+# Set installation directory
+INSTALL_DIR="/opt/stacks/wireguard"
 
-# Generate password hash
-HASH=$(docker run --rm ghcr.io/wg-easy/wg-easy wgpw "$PASSWORD")
-echo "✅ Generated password hash: $HASH"
+# Create directory if it doesn't exist
+sudo mkdir -p "$INSTALL_DIR"
+cd "$INSTALL_DIR" || exit
 
-# Write docker-compose.yml with correct hash
-printf "services:
+# Prompt for a password
+read -s -p "Enter password for wg-easy: " WG_PASSWORD
+echo
+
+# Generate bcrypt hash using Docker (wg-easy provides a utility)
+HASH=$(docker run --rm -it ghcr.io/wg-easy/wg-easy wgpw "$WG_PASSWORD")
+
+# Create docker-compose.yml with proper YAML formatting
+cat > docker-compose.yml <<EOF
+version: '3.8'
+services:
   wg-easy:
-    container_name: wg-easy
     image: ghcr.io/wg-easy/wg-easy
-
+    container_name: wg-easy
     environment:
-      PASSWORD_HASH: '%s'
-      WG_HOST: '%s'
-
-    volumes:
-      - ./config:/etc/wireguard
-      - /lib/modules:/lib/modules
-
+      - PASSWORD_HASH="$HASH"
     ports:
-      - '51820:51820/udp'
-      - '51821:51821/tcp'
-
+      - "51820:51820/udp"
+    volumes:
+      - ./config:/etc/wg-easy
     restart: unless-stopped
+EOF
 
-    cap_add:
-      - NET_ADMIN
-      - SYS_MODULE
+# Add current user to docker group (so docker can run without sudo)
+sudo usermod -aG docker $USER
 
-    sysctls:
-      net.ipv4.ip_forward: 1
-      net.ipv4.conf.all.src_valid_mark: 1
-" "$HASH" "$WG_HOST" > docker-compose.yml
+# Start the container
+docker-compose up -d
+
+echo "wg-easy installed and running! Use the password you entered to log in."
 
 # Start WireGuard stack
 docker compose down || true
