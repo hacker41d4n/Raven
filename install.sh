@@ -45,3 +45,41 @@ docker run -it --rm \
     -e N8N_SECURE_COOKIE=false \
     docker.n8n.io/n8nio/n8n
 
+# Wireguard install
+
+sudo usermod -aG docker $USER
+
+
+sudo reboot
+
+sudo mkdir -p /opt/stacks/wireguard
+cd /opt/stacks/wireguard
+
+docker run --rm -it ghcr.io/wg-easy/wg-easy wgpw '1298144'
+
+sudo nano compose.yaml
+
+services:
+  wg-easy:
+    container_name: wg-easy
+    image: ghcr.io/wg-easy/wg-easy
+
+    environment:
+      - PASSWORD_HASH=$$2b$$12$$coPqCsPtcFO.Ab99xylBNOW4.Iu7OOA2/ZIboHN6/oyxca3MWo7fW
+      - WG_HOST=<IPADDRESS>
+
+    volumes:
+      - ./config:/etc/wireguard
+      - /lib/modules:/lib/modules
+    ports:
+      - "51820:51820/udp"
+      - "51821:51821/tcp"
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.src_valid_mark=1
+
+docker compose up -d
