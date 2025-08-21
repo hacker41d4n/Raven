@@ -77,8 +77,8 @@ printf "services:
     image: ghcr.io/wg-easy/wg-easy
 
     environment:
-      PASSWORD_HASH: '%s'
-      WG_HOST: '%s'
+    - PASSWORD_HASH: '%s'
+    - WG_HOST: '%s'
     - UI_TRAFFIC_STATS=true
 
     volumes:
