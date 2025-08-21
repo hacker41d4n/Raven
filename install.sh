@@ -96,9 +96,6 @@ EOF
 # Add current user to docker group (so docker can run without sudo)
 sudo usermod -aG docker $USER
 
-# Start the container
-docker-compose up -d
-
 echo "wg-easy installed and running! Use the password you entered to log in."
 
 # Start WireGuard stack
