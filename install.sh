@@ -1,66 +1,68 @@
-#Raven
+#!/bin/bash
+# Raven setup script
 
-#System update
+# -----------------------
+# System update
+# -----------------------
+sudo apt update -y
+sudo apt upgrade -y
 
-apt update -y
-apt upgrade -y
+# -----------------------
+# Docker install
+# -----------------------
 
-#Docker install
+# Install prerequisites
+sudo apt-get install -y ca-certificates curl gnupg lsb-release
 
-# Add Docker's official GPG key:
-sudo apt-get update
-sudo apt-get install ca-certificates curl
+# Add Docker's official GPG key
 sudo install -m 0755 -d /etc/apt/keyrings
-sudo curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
-sudo chmod a+r /etc/apt/keyrings/docker.asc
+sudo curl -fsSL https://download.docker.com/linux/debian/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+sudo chmod a+r /etc/apt/keyrings/docker.gpg
 
-# Add the repository to Apt sources:
+# Add Docker repository
 echo \
-  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian \
-  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
-  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-sudo apt-get update
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian \
+  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
 
-sudo apt-get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo apt update
+sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
-# n8n install
-
-docker volume create n8n_data
-
-docker run -it --rm \
- --name n8n \
- -p 5678:5678 \
- -e GENERIC_TIMEZONE="<YOUR_TIMEZONE>" \
- -e TZ="<YOUR_TIMEZONE>" \
- -e N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true \
- -e N8N_RUNNERS_ENABLED=true \
- -v n8n_data:/home/node/.n8n \
- docker.n8n.io/n8nio/n8n
-
-# fix cookies error
-    docker run -d -it --rm \
-    --name n8n \
-    -p 5678:5678 \
-    -v n8n_data:/home/node/.n8n \
-    -e N8N_SECURE_COOKIE=false \
-    docker.n8n.io/n8nio/n8n
-
-# Wireguard install
-
-# Add user to docker group (so you don't need sudo for docker)
+# Add current user to Docker group
 sudo usermod -aG docker $USER
 
-# Create directory for WireGuard stack
-sudo mkdir -p /opt/stacks/wireguard
-cd /opt/stacks/wireguard
+# -----------------------
+# n8n install
+# -----------------------
 
-# Run wg-easy once to generate a password hash (example shown)
+# Create Docker volume
+docker volume create n8n_data
+
+# Run n8n container
+docker run -d \
+  --name n8n \
+  -p 5678:5678 \
+  -v n8n_data:/home/node/.n8n \
+  -e GENERIC_TIMEZONE="Europe/London" \
+  -e TZ="Europe/London" \
+  -e N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true \
+  -e N8N_RUNNERS_ENABLED=true \
+  -e N8N_SECURE_COOKIE=false \
+  docker.n8n.io/n8nio/n8n
+
+# -----------------------
+# WireGuard install
+# -----------------------
+
+# Create WireGuard directory
+sudo mkdir -p /opt/stacks/wireguard
+cd /opt/stacks/wireguard || exit
+
+# Generate password hash
 PASSWORD="1298144"
 HASH=$(docker run --rm ghcr.io/wg-easy/wg-easy wgpw "$PASSWORD")
-
 echo "✅ Generated password hash: $HASH"
 
-# Generate docker-compose.yml
+# Create docker-compose.yml
 cat <<EOF > docker-compose.yml
 version: "3.8"
 
@@ -92,5 +94,5 @@ services:
       - net.ipv4.conf.all.src_valid_mark=1
 EOF
 
-# Start the stack
+# Start WireGuard stack
 docker compose up -d
