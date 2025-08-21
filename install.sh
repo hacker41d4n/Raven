@@ -64,7 +64,6 @@ echo "✅ Generated password hash: $HASH"
 
 # Create docker-compose.yml
 cat <<EOF > docker-compose.yml
-version: "3.8"
 
 services:
   wg-easy:
@@ -72,7 +71,7 @@ services:
     image: ghcr.io/wg-easy/wg-easy
 
     environment:
-      - PASSWORD_HASH="$HASH"
+      - PASSWORD_HASH: "$HASH"
       - WG_HOST=192.168.0.181
 
     volumes:
