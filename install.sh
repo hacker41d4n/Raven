@@ -1,171 +1,108 @@
 #!/bin/bash
+# Automatic Raven setup script - Debian-based systems
+# Installs Docker, n8n, and WireGuard (wg-easy) with defaults
 
-# Function to display a progress bar
-progress_bar() {
-    local progress=$1
-    local total=100
-    local done=$((progress * 50 / total))
-    local left=$((50 - done))
-    fill=$(printf "%${done}s" | tr " " "#")
-    empty=$(printf "%${left}s" | tr " " "-")
-    printf "\rProgress : [${fill}${empty}] ${progress}%%"
-}
+set -e
+export DEBIAN_FRONTEND=noninteractive
 
-# Initialize progress
-progress=0
-progress_bar $progress
+# -----------------------
+# 1️⃣ Default settings
+# -----------------------
+TIMEZONE="Europe/London"
+WG_HOST="192.168.0.181"
+WG_PASSWORD="1298144"
 
-# ==============================
-# Step 1: Update system
-# ==============================
-echo -e "\nUpdating system..."
-sudo apt update && sudo apt upgrade -y
-progress=10
-progress_bar $progress
+echo "⏳ Using defaults:"
+echo "Timezone: $TIMEZONE"
+echo "WireGuard Host: $WG_HOST"
+echo "WireGuard Password: $WG_PASSWORD"
 
-# ==============================
-# Step 2: Install Docker
-# ==============================
-echo -e "\nInstalling Docker..."
-sudo apt install -y apt-transport-https ca-certificates curl software-properties-common
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+# -----------------------
+# 2️⃣ System update
+# -----------------------
+sudo apt update -y
+sudo apt upgrade -y
+
+# -----------------------
+# 3️⃣ Install prerequisites
+# -----------------------
+sudo apt install -y ca-certificates curl gnupg lsb-release
+
+# -----------------------
+# 4️⃣ Install Docker
+# -----------------------
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/debian/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+sudo chmod a+r /etc/apt/keyrings/docker.gpg
+
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian \
+  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
 sudo apt update
-sudo apt install -y docker-ce docker-ce-cli containerd.io
-progress=30
-progress_bar $progress
+sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
-# ==============================
-# Step 3: Install Docker Compose
-# ==============================
-echo -e "\nInstalling Docker Compose..."
-sudo curl -L "https://github.com/docker/compose/releases/download/v2.23.1/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-sudo chmod +x /usr/local/bin/docker-compose
-progress=45
-progress_bar $progress
-
-# ==============================
-# Step 4: Add user to docker group
-# ==============================
 sudo usermod -aG docker $USER
-progress=50
-progress_bar $progress
 
-# ==============================
-# Step 5: Create directories
-# ==============================
-mkdir -p ~/docker/portainer ~/docker/wireguard ~/docker/pihole ~/docker/n8n ~/docker/heimdall ~/docker/yacht
-progress=60
-progress_bar $progress
+# -----------------------
+# 5️⃣ Setup n8n
+# -----------------------
+docker volume create n8n_data
 
-# ==============================
-# Step 6: Create docker-compose.yml
-# ==============================
-cat > ~/docker/docker-compose.yml <<'EOF'
-version: "3.9"
+docker run -d \
+  --name n8n \
+  -p 5678:5678 \
+  -v n8n_data:/home/node/.n8n \
+  -e GENERIC_TIMEZONE="$TIMEZONE" \
+  -e TZ="$TIMEZONE" \
+  -e N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true \
+  -e N8N_RUNNERS_ENABLED=true \
+  -e N8N_SECURE_COOKIE=false \
+  docker.n8n.io/n8nio/n8n
 
-services:
-  portainer:
-    image: portainer/portainer-ce:latest
-    container_name: portainer
-    restart: always
-    ports:
-      - "9000:9000"
+# -----------------------
+# 6️⃣ Setup WireGuard (wg-easy)
+# -----------------------
+sudo mkdir -p /opt/stacks/wireguard
+cd /opt/stacks/wireguard || exit
+
+# Generate password hash
+HASH=$(docker run --rm ghcr.io/wg-easy/wg-easy wgpw "$WG_PASSWORD")
+echo "✅ Generated WireGuard password hash: $HASH"
+
+# Write docker-compose.yml with correct hash
+printf "services:
+  wg-easy:
+    container_name: wg-easy
+    image: ghcr.io/wg-easy/wg-easy
+
+    environment:
+      PASSWORD_HASH: '%s'
+      WG_HOST: '%s'
+
     volumes:
-      - portainer_data:/data
-      - /var/run/docker.sock:/var/run/docker.sock
+      - ./config:/etc/wireguard
+      - /lib/modules:/lib/modules
 
-  wireguard:
-    image: ghcr.io/linuxserver/wireguard
-    container_name: wireguard
+    ports:
+      - '51820:51820/udp'
+      - '51821:51821/tcp'
+
+    restart: unless-stopped
+
     cap_add:
       - NET_ADMIN
       - SYS_MODULE
-    environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=Africa/Johannesburg
-      - SERVERURL=192.168.0.181
-      - SERVERPORT=51820
-      - PEERS=1
-      - PEERDNS=1.1.1.1
-      - INTERNAL_SUBNET=10.13.13.0
-    volumes:
-      - ./wireguard/config:/config
-      - /lib/modules:/lib/modules
-    ports:
-      - "51820:51820/udp"
+
     sysctls:
-      - net.ipv4.conf.all.src_valid_mark=1
-    restart: unless-stopped
+      net.ipv4.ip_forward: 1
+      net.ipv4.conf.all.src_valid_mark: 1
+" "$HASH" "$WG_HOST" > docker-compose.yml
 
-  pihole:
-    image: pihole/pihole:latest
-    container_name: pihole
-    environment:
-      TZ: Africa/Johannesburg
-      WEBPASSWORD: "1298144"
-      DNS1: 1.1.1.1
-      DNS2: 1.0.0.1
-    volumes:
-      - ./pihole/etc-pihole:/etc/pihole
-      - ./pihole/etc-dnsmasq.d:/etc/dnsmasq.d
-    ports:
-      - "53:53/tcp"
-      - "53:53/udp"
-      - "80:80/tcp"
-    restart: unless-stopped
+# Start WireGuard stack
+docker compose down || true
+docker compose up -d
 
-  n8n:
-    image: n8nio/n8n
-    container_name: n8n
-    ports:
-      - "5678:5678"
-    environment:
-      - N8N_BASIC_AUTH_ACTIVE=true
-      - N8N_BASIC_AUTH_USER=admin
-      - N8N_BASIC_AUTH_PASSWORD=1298144
-    volumes:
-      - ./n8n:/home/node/.n8n
-    restart: unless-stopped
-
-  heimdall:
-    image: linuxserver/heimdall
-    container_name: heimdall
-    ports:
-      - "8080:80"
-    volumes:
-      - ./heimdall/config:/config
-    restart: unless-stopped
-
-  yacht:
-    image: selfhostedpro/yacht:latest
-    container_name: yacht
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./yacht/config:/app/config
-      - /var/run/docker.sock:/var/run/docker.sock
-    restart: unless-stopped
-
-volumes:
-  portainer_data:
-EOF
-progress=75
-progress_bar $progress
-
-# ==============================
-# Step 7: Start Docker Compose
-# ==============================
-cd ~/docker
-docker-compose up -d
-progress=100
-progress_bar $progress
-
-echo -e "\nAll containers deployed successfully!"
-echo "Portainer: http://localhost:9000"
-echo "Heimdall: http://localhost:8080"
-echo "Yacht: http://localhost:8000"
-echo "n8n: http://localhost:5678"
-echo "Pi-hole: port 80"
-echo "WireGuard: UDP port 51820"
+echo "🎉 Raven automatic setup complete!"
+echo "n8n URL: http://localhost:5678"
+echo "WireGuard wg-easy URL: http://$WG_HOST:51821 (login with password: $WG_PASSWORD)"

@@ -1,97 +1,108 @@
-#!/usr/bin/env python3
+#!/bin/bash
+# Automatic Raven setup script - Debian-based systems
+# Installs Docker, n8n, and WireGuard (wg-easy) with defaults
 
-import os
-import subprocess
-import sys
+set -e
+export DEBIAN_FRONTEND=noninteractive
 
-def run(command):
-    """Run a shell command and exit if it fails"""
-    print(f"Running: {command}")
-    result = subprocess.run(command, shell=True)
-    if result.returncode != 0:
-        print(f"Error running: {command}")
-        sys.exit(1)
+# -----------------------
+# 1️⃣ Default settings
+# -----------------------
+TIMEZONE="Europe/London"
+WG_HOST="192.168.0.181"
+WG_PASSWORD="1298144"
 
-def install_dependencies():
-    run("sudo apt update && sudo apt upgrade -y")
-    run("sudo apt install -y curl gnupg lsb-release software-properties-common")
+echo "⏳ Using defaults:"
+echo "Timezone: $TIMEZONE"
+echo "WireGuard Host: $WG_HOST"
+echo "WireGuard Password: $WG_PASSWORD"
 
-def install_docker():
-    run("curl -fsSL https://get.docker.com -o get-docker.sh")
-    run("sh get-docker.sh")
-    run("sudo usermod -aG docker $USER")
-    run("docker --version")
-    run("rm get-docker.sh")
+# -----------------------
+# 2️⃣ System update
+# -----------------------
+sudo apt update -y
+sudo apt upgrade -y
 
-def install_docker_compose():
-    # Use latest Compose version
-    run("sudo curl -L 'https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)' -o /usr/local/bin/docker-compose")
-    run("sudo chmod +x /usr/local/bin/docker-compose")
-    run("docker-compose --version")
+# -----------------------
+# 3️⃣ Install prerequisites
+# -----------------------
+sudo apt install -y ca-certificates curl gnupg lsb-release
 
-def setup_wireguard():
-    os.makedirs("/opt/wireguard", exist_ok=True)
-    os.chdir("/opt/wireguard")
-    
-    docker_compose_content = """
-version: '3.8'
-services:
+# -----------------------
+# 4️⃣ Install Docker
+# -----------------------
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/debian/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+sudo chmod a+r /etc/apt/keyrings/docker.gpg
+
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian \
+  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+sudo apt update
+sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+sudo usermod -aG docker $USER
+
+# -----------------------
+# 5️⃣ Setup n8n
+# -----------------------
+docker volume create n8n_data
+
+docker run -d \
+  --name n8n \
+  -p 5678:5678 \
+  -v n8n_data:/home/node/.n8n \
+  -e GENERIC_TIMEZONE="$TIMEZONE" \
+  -e TZ="$TIMEZONE" \
+  -e N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true \
+  -e N8N_RUNNERS_ENABLED=true \
+  -e N8N_SECURE_COOKIE=false \
+  docker.n8n.io/n8nio/n8n
+
+# -----------------------
+# 6️⃣ Setup WireGuard (wg-easy)
+# -----------------------
+sudo mkdir -p /opt/stacks/wireguard
+cd /opt/stacks/wireguard || exit
+
+# Generate password hash
+HASH=$(docker run --rm ghcr.io/wg-easy/wg-easy wgpw "$WG_PASSWORD")
+echo "✅ Generated WireGuard password hash: $HASH"
+
+# Write docker-compose.yml with correct hash
+printf "services:
   wg-easy:
-    image: ghcr.io/wg-easy/wg-easy:latest
     container_name: wg-easy
+    image: ghcr.io/wg-easy/wg-easy
+
     environment:
-      - PASSWORD=1298144
-      - WG_HOST=localhost
-    ports:
-      - "51820:51820/udp"
-      - "51821:51821/tcp"
+      PASSWORD_HASH: '%s'
+      WG_HOST: '%s'
+
     volumes:
       - ./config:/etc/wireguard
+      - /lib/modules:/lib/modules
+
+    ports:
+      - '51820:51820/udp'
+      - '51821:51821/tcp'
+
     restart: unless-stopped
+
     cap_add:
       - NET_ADMIN
       - SYS_MODULE
-    """
-    with open("docker-compose.yml", "w") as f:
-        f.write(docker_compose_content)
-    
-    run("docker-compose up -d")
 
-def setup_n8n():
-    os.makedirs("/opt/n8n", exist_ok=True)
-    os.chdir("/opt/n8n")
-    
-    docker_compose_content = """
-version: '3'
-services:
-  n8n:
-    image: n8nio/n8n
-    container_name: n8n
-    ports:
-      - "5678:5678"
-    environment:
-      - N8N_BASIC_AUTH_ACTIVE=true
-      - N8N_BASIC_AUTH_USER=admin
-      - N8N_BASIC_AUTH_PASSWORD=1298144
-      - N8N_HOST=localhost
-      - N8N_PORT=5678
-      - WEBHOOK_TUNNEL_URL=http://localhost:5678/
-    volumes:
-      - ./n8n:/home/node/.n8n
-    restart: unless-stopped
-    """
-    with open("docker-compose.yml", "w") as f:
-        f.write(docker_compose_content)
-    
-    run("docker-compose up -d")
+    sysctls:
+      net.ipv4.ip_forward: 1
+      net.ipv4.conf.all.src_valid_mark: 1
+" "$HASH" "$WG_HOST" > docker-compose.yml
 
-def main():
-    install_dependencies()
-    install_docker()
-    install_docker_compose()
-    setup_wireguard()
-    setup_n8n()
-    print("Installation complete! Reboot recommended.")
+# Start WireGuard stack
+docker compose down || true
+docker compose up -d
 
-if __name__ == "__main__":
-    main()
+echo "🎉 Raven automatic setup complete!"
+echo "n8n URL: http://localhost:5678"
+echo "WireGuard wg-easy URL: http://$WG_HOST:51821 (login with password: $WG_PASSWORD)"
