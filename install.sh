@@ -79,6 +79,7 @@ printf "services:
     environment:
       PASSWORD_HASH: '%s'
       WG_HOST: '%s'
+    - UI_TRAFFIC_STATS=true
 
     volumes:
       - ./config:/etc/wireguard
