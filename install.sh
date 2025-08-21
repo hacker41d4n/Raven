@@ -55,7 +55,10 @@ sudo mkdir -p /opt/stacks/wireguard
 cd /opt/stacks/wireguard
 
 # Run wg-easy once to generate a password hash (example shown)
-docker run --rm -it ghcr.io/wg-easy/wg-easy wgpw '1298144'
+PASSWORD="1298144"
+HASH=$(docker run --rm ghcr.io/wg-easy/wg-easy wgpw "$PASSWORD")
+
+echo "✅ Generated password hash: $HASH"
 
 # Generate docker-compose.yml
 cat <<EOF > docker-compose.yml
@@ -67,7 +70,7 @@ services:
     image: ghcr.io/wg-easy/wg-easy
 
     environment:
-      - PASSWORD_HASH= $$2a$$12$$OkDnvHYzk26kEIPAt7j6g.zO6h/FuNzu.UCTNfa84mzD3uJyZR8SG
+      - PASSWORD_HASH=$HASH
       - WG_HOST=192.168.0.181
 
     volumes:
